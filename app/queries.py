@@ -68,8 +68,26 @@ async def execute_dsl(dsl: QueryDSL) -> int:
         if dsl.aggregation == Aggregation.sum_final:
             metric = dsl.metric or Metric.views
             col = _metric_column(metric)
+            sum_where: list[str] = []
+            sum_params: dict[str, object] = {}
+
+            if dsl.creator_id:
+                sum_where.append("creator_id = :creator_id")
+                sum_params["creator_id"] = dsl.creator_id
+
+            if dsl.published_from:
+                sum_where.append("video_created_at >= :published_from")
+                sum_params["published_from"] = dsl.published_from
+
+            if dsl.published_to:
+                sum_where.append("video_created_at < :published_to")
+                sum_params["published_to"] = dsl.published_to
+
             stmt = f"SELECT COALESCE(sum({col}), 0) FROM videos"
-            result = await fetch_scalar(stmt)
+            if sum_where:
+                stmt += " WHERE " + " AND ".join(sum_where)
+
+            result = await fetch_scalar(stmt, sum_params if sum_params else None)
             logger.info("dsl_ok", extra={"aggregation": dsl.aggregation.value, "result": result})
             return result
 

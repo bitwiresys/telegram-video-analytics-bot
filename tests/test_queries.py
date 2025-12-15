@@ -38,10 +38,20 @@ async def test_execute_count_videos(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_execute_sum_final(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
         assert "sum(likes_count)" in stmt
+        assert "video_created_at >= :published_from" in stmt
+        assert "video_created_at < :published_to" in stmt
+        assert params is not None
+        assert params["published_from"] == datetime(2025, 6, 1, tzinfo=timezone.utc)
+        assert params["published_to"] == datetime(2025, 7, 1, tzinfo=timezone.utc)
         return 11
 
     monkeypatch.setattr("app.queries.fetch_scalar", fake_fetch)
-    dsl = QueryDSL(aggregation=Aggregation.sum_final, metric=Metric.likes)
+    dsl = QueryDSL(
+        aggregation=Aggregation.sum_final,
+        metric=Metric.likes,
+        published_from=datetime(2025, 6, 1, tzinfo=timezone.utc),
+        published_to=datetime(2025, 7, 1, tzinfo=timezone.utc),
+    )
     res = await execute_dsl(dsl)
     assert res == 11
 
