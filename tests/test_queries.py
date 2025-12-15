@@ -132,6 +132,28 @@ async def test_execute_distinct_delta(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_distinct_delta_creator(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
+        assert "count(DISTINCT s.video_id)" in stmt
+        assert "JOIN videos" in stmt
+        assert "v.creator_id = :creator_id" in stmt
+        assert "s.delta_views_count" in stmt
+        assert params is not None
+        assert params["creator_id"] == "c1"
+        return 9
+
+    monkeypatch.setattr("app.queries.fetch_scalar", fake_fetch)
+    dsl = QueryDSL(
+        aggregation=Aggregation.count_distinct_videos_with_delta_gt0,
+        metric=Metric.views,
+        creator_id="c1",
+        day=date(2025, 11, 27),
+    )
+    res = await execute_dsl(dsl)
+    assert res == 9
+
+
+@pytest.mark.asyncio
 async def test_execute_count_snapshots_with_delta_lt0(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
         assert "SELECT count(*) FROM video_snapshots" in stmt
@@ -143,3 +165,24 @@ async def test_execute_count_snapshots_with_delta_lt0(monkeypatch: pytest.Monkey
     dsl = QueryDSL(aggregation=Aggregation.count_snapshots_with_delta_lt0, metric=Metric.views)
     res = await execute_dsl(dsl)
     assert res == 24
+
+
+@pytest.mark.asyncio
+async def test_execute_count_snapshots_with_delta_lt0_creator(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
+        assert "FROM video_snapshots s" in stmt
+        assert "JOIN videos v" in stmt
+        assert "s.delta_reports_count < 0" in stmt
+        assert "v.creator_id = :creator_id" in stmt
+        assert params is not None
+        assert params["creator_id"] == "c2"
+        return 5
+
+    monkeypatch.setattr("app.queries.fetch_scalar", fake_fetch)
+    dsl = QueryDSL(
+        aggregation=Aggregation.count_snapshots_with_delta_lt0,
+        metric=Metric.reports,
+        creator_id="c2",
+    )
+    res = await execute_dsl(dsl)
+    assert res == 5

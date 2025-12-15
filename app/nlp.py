@@ -188,6 +188,23 @@ def _extract_range(text: str) -> tuple[date | None, date | None]:
     return None, None
 
 
+def _extract_month_range(text: str) -> tuple[datetime | None, datetime | None]:
+    """Принимает текст; возвращает (published_from,published_to) для месяца или (None,None)."""
+    m = re.search(r"(?:^|\s)(?:в|за)\s+([а-яА-Я]+)\s+(\d{4})(?:\s+года)?(?=\s|$)", text)
+    if not m:
+        return None, None
+    month = _month_num(m.group(1))
+    if month is None:
+        return None, None
+    year = int(m.group(2))
+    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+    return start, end
+
+
 def _extract_json_object(raw: str) -> bytes | None:
     """Принимает сырой ответ LLM; возвращает JSON-объект в bytes или None."""
     s = raw.strip()
@@ -204,19 +221,33 @@ def _extract_json_object(raw: str) -> bytes | None:
 def _extract_threshold(text: str) -> Threshold | None:
     """Принимает текст; возвращает Threshold (>, число) или None."""
     t = text.lower()
-    if "больше" not in t and ">" not in t:
+    if not any(op in t for op in ["больше", "более", "меньше", ">", "<", ">=", "<=", "не менее", "не меньше", "не более", "не больше", "как минимум"]):
         return None
 
     metric = _detect_metric(text)
     if metric is None:
         return None
 
-    m = re.search(r"(больше|>)\s*([0-9][0-9\s]*)", text)
+    m = re.search(
+        r"(не\s+меньше|не\s+менее|как\s+минимум|>=|не\s+больше|не\s+более|<=|больше|более|>|меньше|<)\s*([0-9][0-9\s]*)",
+        text,
+        flags=re.IGNORECASE,
+    )
     if not m:
         return None
 
+    op_raw = m.group(1).lower().replace(" ", "")
+    if op_raw in {"неменьше", "неменее", "какминимум", ">="}:
+        op = "gte"
+    elif op_raw in {"небольше", "неболее", "<="}:
+        op = "lte"
+    elif op_raw in {"меньше", "<"}:
+        op = "lt"
+    else:
+        op = "gt"
+
     value = _parse_int_with_spaces(m.group(2))
-    return Threshold(metric=metric, op="gt", value=value)
+    return Threshold(metric=metric, op=op, value=value)
 
 
 def _heuristic_parse(text: str) -> QueryDSL | None:
@@ -227,7 +258,13 @@ def _heuristic_parse(text: str) -> QueryDSL | None:
         metric = _detect_metric(text)
         if metric is not None and ("отриц" in t or "стало меньше" in t or "уменьш" in t):
             d = _extract_day(text)
-            return QueryDSL(aggregation=Aggregation.count_snapshots_with_delta_lt0, metric=metric, day=d)
+            creator_id = _extract_creator_id(text)
+            return QueryDSL(
+                aggregation=Aggregation.count_snapshots_with_delta_lt0,
+                metric=metric,
+                creator_id=creator_id,
+                day=d,
+            )
 
     new_views_intent = (
         "получ" in t
@@ -294,7 +331,13 @@ def _heuristic_parse(text: str) -> QueryDSL | None:
         d = _extract_day(text)
         if d is None:
             return None
-        return QueryDSL(aggregation=Aggregation.count_distinct_videos_with_delta_gt0, metric=metric, day=d)
+        creator_id = _extract_creator_id(text)
+        return QueryDSL(
+            aggregation=Aggregation.count_distinct_videos_with_delta_gt0,
+            metric=metric,
+            creator_id=creator_id,
+            day=d,
+        )
 
     if "сколько" in t and "разн" in t and "креатор" in t and "видео" in t:
         threshold = _extract_threshold(text)
@@ -317,11 +360,38 @@ def _heuristic_parse(text: str) -> QueryDSL | None:
             threshold=threshold,
         )
 
-    if "сколько" in t and ("просмотр" in t or "лайк" in t or "комментар" in t or "жалоб" in t) and "вс" in t:
+    if (
+        ("суммар" in t or "в сумме" in t or "итого" in t or ("сколько" in t and "вс" in t))
+        and ("просмотр" in t or "лайк" in t or "комментар" in t or "жалоб" in t or "репорт" in t)
+        and "вырос" not in t
+        and "прирост" not in t
+        and "замер" not in t
+        and "снапш" not in t
+        and "за час" not in t
+    ):
         metric = _detect_metric(text)
         if metric is None:
             return None
-        return QueryDSL(aggregation=Aggregation.sum_final, metric=metric)
+
+        creator_id = _extract_creator_id(text)
+        left, right = _extract_range(text)
+        published_from = None
+        published_to = None
+        if left and right:
+            start, _ = _day_bounds_utc(left)
+            _, end = _day_bounds_utc(right)
+            published_from = start
+            published_to = end
+        else:
+            published_from, published_to = _extract_month_range(text)
+
+        return QueryDSL(
+            aggregation=Aggregation.sum_final,
+            metric=metric,
+            creator_id=creator_id,
+            published_from=published_from,
+            published_to=published_to,
+        )
 
     return None
 

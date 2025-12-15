@@ -166,12 +166,23 @@ async def execute_dsl(dsl: QueryDSL) -> int:
             start = datetime(dsl.day.year, dsl.day.month, dsl.day.day, tzinfo=timezone.utc)
             end = start + timedelta(days=1)
             col = _delta_metric_column(metric)
-            stmt = (
-                "SELECT count(DISTINCT video_id) "
-                "FROM video_snapshots "
-                f"WHERE created_at >= :start AND created_at < :end AND {col} > 0"
-            )
-            result = await fetch_scalar(stmt, {"start": start, "end": end})
+            params_distinct: dict[str, object] = {"start": start, "end": end}
+            if dsl.creator_id:
+                stmt = (
+                    "SELECT count(DISTINCT s.video_id) "
+                    "FROM video_snapshots s "
+                    "JOIN videos v ON v.id = s.video_id "
+                    f"WHERE s.created_at >= :start AND s.created_at < :end AND s.{col} > 0 AND v.creator_id = :creator_id"
+                )
+                params_distinct["creator_id"] = dsl.creator_id
+            else:
+                stmt = (
+                    "SELECT count(DISTINCT video_id) "
+                    "FROM video_snapshots "
+                    f"WHERE created_at >= :start AND created_at < :end AND {col} > 0"
+                )
+
+            result = await fetch_scalar(stmt, params_distinct)
             logger.info("dsl_ok", extra={"aggregation": dsl.aggregation.value, "result": result})
             return result
 
@@ -179,11 +190,22 @@ async def execute_dsl(dsl: QueryDSL) -> int:
             metric = dsl.metric or Metric.views
             col = _delta_metric_column(metric)
             snapshot_params: dict[str, object] = {}
-            stmt = f"SELECT count(*) FROM video_snapshots WHERE {col} < 0"
+            if dsl.creator_id:
+                stmt = (
+                    f"SELECT count(*) FROM video_snapshots s "
+                    "JOIN videos v ON v.id = s.video_id "
+                    f"WHERE s.{col} < 0 AND v.creator_id = :creator_id"
+                )
+                snapshot_params["creator_id"] = dsl.creator_id
+            else:
+                stmt = f"SELECT count(*) FROM video_snapshots WHERE {col} < 0"
             if dsl.day is not None:
                 start = datetime(dsl.day.year, dsl.day.month, dsl.day.day, tzinfo=timezone.utc)
                 end = start + timedelta(days=1)
-                stmt += " AND created_at >= :start AND created_at < :end"
+                if dsl.creator_id:
+                    stmt += " AND s.created_at >= :start AND s.created_at < :end"
+                else:
+                    stmt += " AND created_at >= :start AND created_at < :end"
                 snapshot_params["start"] = start
                 snapshot_params["end"] = end
             result = await fetch_scalar(stmt, snapshot_params if snapshot_params else None)

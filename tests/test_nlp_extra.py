@@ -46,6 +46,18 @@ async def test_parse_negative_delta_snapshots_views() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parse_negative_delta_snapshots_creator_id() -> None:
+    q = (
+        "Сколько всего есть замеров статистики по видео креатора с id abcdefabcdefabcdefabcdefabcdefab, "
+        "в которых число жалоб за час оказалось отрицательным"
+    )
+    dsl = await parse_to_dsl(q)
+    assert dsl.aggregation == Aggregation.count_snapshots_with_delta_lt0
+    assert dsl.metric == Metric.reports
+    assert dsl.creator_id == "abcdefabcdefabcdefabcdefabcdefab"
+
+
+@pytest.mark.asyncio
 async def test_parse_sum_delta_creator_time_window() -> None:
     q = (
         "На сколько просмотров суммарно выросли все видео креатора с id cd87be38b50b4fdd8342bb3c383f3c7d "
@@ -69,6 +81,32 @@ async def test_parse_count_distinct_creators_with_final_gt() -> None:
     assert dsl.threshold.metric == Metric.likes
     assert dsl.threshold.op == "gt"
     assert dsl.threshold.value == 10000
+
+
+@pytest.mark.asyncio
+async def test_parse_sum_final_month_range() -> None:
+    q = "Какое суммарное количество лайков набрали все видео, опубликованные в декабре 2025 года?"
+    dsl = await parse_to_dsl(q)
+    assert dsl.aggregation == Aggregation.sum_final
+    assert dsl.metric == Metric.likes
+    assert dsl.published_from == datetime(2025, 12, 1, tzinfo=timezone.utc)
+    assert dsl.published_to == datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def test_extract_threshold_gte_lte() -> None:
+    from app.nlp import _extract_threshold
+
+    th = _extract_threshold("Сколько видео набрало не менее 10 000 просмотров?")
+    assert th is not None
+    assert th.metric == Metric.views
+    assert th.op == "gte"
+    assert th.value == 10000
+
+    th2 = _extract_threshold("Сколько видео набрало не более 500 лайков?")
+    assert th2 is not None
+    assert th2.metric == Metric.likes
+    assert th2.op == "lte"
+    assert th2.value == 500
 
 
 @pytest.mark.asyncio
