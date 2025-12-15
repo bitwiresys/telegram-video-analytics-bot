@@ -208,6 +208,12 @@ def _heuristic_parse(text: str) -> QueryDSL | None:
     """Принимает текст; возвращает QueryDSL из эвристик или None если не распознано."""
     t = text.lower()
 
+    if "замер" in t or "снапш" in t or "за час" in t:
+        metric = _detect_metric(text)
+        if metric is not None and ("отриц" in t or "стало меньше" in t or "уменьш" in t):
+            d = _extract_day(text)
+            return QueryDSL(aggregation=Aggregation.count_snapshots_with_delta_lt0, metric=metric, day=d)
+
     new_views_intent = (
         "получ" in t
         and "нов" in t
@@ -264,7 +270,7 @@ _SYSTEM = """Ты преобразуешь русскоязычный вопро
 
 Схема QueryDSL:
 {
-  "aggregation": "count_videos" | "sum_final" | "sum_delta" | "count_distinct_videos_with_delta_gt0",
+  "aggregation": "count_videos" | "sum_final" | "sum_delta" | "count_distinct_videos_with_delta_gt0" | "count_snapshots_with_delta_lt0",
   "metric": "views" | "likes" | "comments" | "reports" | null,
   "creator_id": string|null,
   "published_from": string|null,
@@ -279,6 +285,8 @@ _SYSTEM = """Ты преобразуешь русскоязычный вопро
 - day в формате YYYY-MM-DD.
 - "за всё время" означает таблицу videos (final).
 - "выросли" и "прирост" означают сумму delta_* по таблице video_snapshots в пределах дня.
+- "замеры статистики", "снапшоты", "за час" и "delta" относятся к таблице video_snapshots.
+- "отрицательный" или "стало меньше" для просмотров/лайков/комментариев/жалоб означает count_snapshots_with_delta_lt0 по delta_*.
 - Ответь только JSON без текста.
 """
 
@@ -294,7 +302,22 @@ async def parse_to_dsl(text: str) -> QueryDSL:
                 raise ValueError("no json")
             obj = orjson.loads(blob)
             try:
-                return QueryDSL.model_validate(obj)
+                llm_dsl = QueryDSL.model_validate(obj)
+                t = text.lower()
+                is_snapshot_intent = "замер" in t or "снапш" in t or "за час" in t
+                if (
+                    is_snapshot_intent
+                    and llm_dsl.aggregation == Aggregation.count_videos
+                    and llm_dsl.threshold is not None
+                    and llm_dsl.threshold.op == "lt"
+                    and llm_dsl.threshold.value == 0
+                ):
+                    return QueryDSL(
+                        aggregation=Aggregation.count_snapshots_with_delta_lt0,
+                        metric=llm_dsl.threshold.metric,
+                        day=llm_dsl.day,
+                    )
+                return llm_dsl
             except ValidationError:
                 logger.warning("llm_invalid_dsl")
         except Exception as exc:
@@ -302,9 +325,9 @@ async def parse_to_dsl(text: str) -> QueryDSL:
 
         logger.info("fallback_to_heuristic")
 
-    dsl = _heuristic_parse(text)
-    if dsl is not None:
-        return dsl
+    heuristic_dsl = _heuristic_parse(text)
+    if heuristic_dsl is not None:
+        return heuristic_dsl
 
     logger.info("fallback_default")
     return QueryDSL(aggregation=Aggregation.count_videos)

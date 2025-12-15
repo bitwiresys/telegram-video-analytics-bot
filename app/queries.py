@@ -105,6 +105,21 @@ async def execute_dsl(dsl: QueryDSL) -> int:
             logger.info("dsl_ok", extra={"aggregation": dsl.aggregation.value, "result": result})
             return result
 
+        if dsl.aggregation == Aggregation.count_snapshots_with_delta_lt0:
+            metric = dsl.metric or Metric.views
+            col = _delta_metric_column(metric)
+            snapshot_params: dict[str, object] = {}
+            stmt = f"SELECT count(*) FROM video_snapshots WHERE {col} < 0"
+            if dsl.day is not None:
+                start = datetime(dsl.day.year, dsl.day.month, dsl.day.day, tzinfo=timezone.utc)
+                end = start + timedelta(days=1)
+                stmt += " AND created_at >= :start AND created_at < :end"
+                snapshot_params["start"] = start
+                snapshot_params["end"] = end
+            result = await fetch_scalar(stmt, snapshot_params if snapshot_params else None)
+            logger.info("dsl_ok", extra={"aggregation": dsl.aggregation.value, "result": result})
+            return result
+
         logger.info("dsl_unknown", extra={"aggregation": dsl.aggregation.value})
         return 0
     except Exception as exc:

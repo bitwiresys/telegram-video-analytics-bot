@@ -37,6 +37,15 @@ async def test_parse_default_fallback() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parse_negative_delta_snapshots_views() -> None:
+    dsl = await parse_to_dsl(
+        "Сколько всего есть замеров статистики (по всем видео), в которых число просмотров за час оказалось отрицательным"
+    )
+    assert dsl.aggregation == Aggregation.count_snapshots_with_delta_lt0
+    assert dsl.metric == Metric.views
+
+
+@pytest.mark.asyncio
 async def test_parse_llm_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "x")
     monkeypatch.setenv("OPENROUTER_MODEL", "x")

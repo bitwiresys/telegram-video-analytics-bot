@@ -108,6 +108,14 @@ OPENROUTER_FALLBACK_MODEL=...
 
 Если LLM не настроен или вернул невалидный JSON, используется эвристический разбор.
 
+### Как описывается схема данных для LLM (промпт)
+
+Промпт для LLM находится в `app/nlp.py` в переменной `_SYSTEM`. В нём описаны:
+
+- агрегаты (значения `QueryDSL.aggregation`)
+- соответствие формулировок пользователя таблицам `videos` (final) и `video_snapshots` (delta/snapshots)
+- формат дат/диапазонов (UTC)
+
 ### Кратко про архитектуру и преобразование запроса в SQL
 
 Пайплайн обработки сообщения:
@@ -244,6 +252,14 @@ OPENROUTER_FALLBACK_MODEL=...
 ```
 
 If LLM is not configured or returns invalid output, a heuristic parser is used.
+
+### LLM prompt (schema description)
+
+The LLM prompt is defined in `app/nlp.py` as `_SYSTEM`. It describes:
+
+- supported aggregations (`QueryDSL.aggregation`)
+- mapping between user intent and tables (`videos` for final metrics, `video_snapshots` for deltas/snapshots)
+- date formats and UTC rules
 
 ### Architecture (NL → SQL → PostgreSQL)
 

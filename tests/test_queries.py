@@ -76,3 +76,17 @@ async def test_execute_distinct_delta(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     res = await execute_dsl(dsl)
     assert res == 3
+
+
+@pytest.mark.asyncio
+async def test_execute_count_snapshots_with_delta_lt0(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
+        assert "SELECT count(*) FROM video_snapshots" in stmt
+        assert "delta_views_count < 0" in stmt
+        assert params is None or params == {}
+        return 24
+
+    monkeypatch.setattr("app.queries.fetch_scalar", fake_fetch)
+    dsl = QueryDSL(aggregation=Aggregation.count_snapshots_with_delta_lt0, metric=Metric.views)
+    res = await execute_dsl(dsl)
+    assert res == 24
