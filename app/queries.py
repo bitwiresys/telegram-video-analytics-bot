@@ -93,17 +93,35 @@ async def execute_dsl(dsl: QueryDSL) -> int:
 
         if dsl.aggregation == Aggregation.sum_delta:
             metric = dsl.metric or Metric.views
-            if dsl.day is None:
+            start: datetime | None = None
+            end: datetime | None = None
+            if dsl.snapshot_from and dsl.snapshot_to:
+                start = dsl.snapshot_from
+                end = dsl.snapshot_to
+            elif dsl.day is not None:
+                start = datetime(dsl.day.year, dsl.day.month, dsl.day.day, tzinfo=timezone.utc)
+                end = start + timedelta(days=1)
+            else:
                 return 0
-            start = datetime(dsl.day.year, dsl.day.month, dsl.day.day, tzinfo=timezone.utc)
-            end = start + timedelta(days=1)
             col = _delta_metric_column(metric)
-            stmt = (
-                f"SELECT COALESCE(sum({col}), 0) "
-                "FROM video_snapshots "
-                "WHERE created_at >= :start AND created_at < :end"
-            )
-            result = await fetch_scalar(stmt, {"start": start, "end": end})
+
+            params_delta: dict[str, object] = {"start": start, "end": end}
+            if dsl.creator_id:
+                stmt = (
+                    f"SELECT COALESCE(sum(s.{col}), 0) "
+                    "FROM video_snapshots s "
+                    "JOIN videos v ON v.id = s.video_id "
+                    "WHERE v.creator_id = :creator_id AND s.created_at >= :start AND s.created_at < :end"
+                )
+                params_delta["creator_id"] = dsl.creator_id
+            else:
+                stmt = (
+                    f"SELECT COALESCE(sum({col}), 0) "
+                    "FROM video_snapshots "
+                    "WHERE created_at >= :start AND created_at < :end"
+                )
+
+            result = await fetch_scalar(stmt, params_delta)
             logger.info("dsl_ok", extra={"aggregation": dsl.aggregation.value, "result": result})
             return result
 

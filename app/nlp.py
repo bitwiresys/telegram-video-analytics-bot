@@ -112,6 +112,21 @@ def _parse_date(s: str) -> date | None:
     return dt.date()
 
 
+def _extract_time_range(text: str) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    """Принимает текст; возвращает ((h1,m1),(h2,m2)) для диапазона времени или None."""
+    m = re.search(
+        r"с\s*(\d{1,2}):(\d{2})\s*(?:до|по)\s*(\d{1,2}):(\d{2})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    h1, m1, h2, m2 = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+    if not (0 <= h1 <= 23 and 0 <= h2 <= 23 and 0 <= m1 <= 59 and 0 <= m2 <= 59):
+        return None
+    return (h1, m1), (h2, m2)
+
+
 def _extract_day(text: str) -> date | None:
     """Принимает текст; возвращает найденную date или None."""
     m = re.search(r"(\d{1,2}\s+[а-яА-Я]+\s+\d{4})", text)
@@ -240,13 +255,30 @@ def _heuristic_parse(text: str) -> QueryDSL | None:
         )
 
     if ("вырос" in t or "прирост" in t) and "видео" in t:
+        creator_id = _extract_creator_id(text)
         metric = _detect_metric(text)
         if metric is None:
             metric = Metric.views
         d = _extract_day(text)
         if d is None:
             return None
-        return QueryDSL(aggregation=Aggregation.sum_delta, metric=metric, day=d)
+        tr = _extract_time_range(text)
+        if tr is not None:
+            (h1, m1), (h2, m2) = tr
+            start_dt = datetime(d.year, d.month, d.day, h1, m1, tzinfo=timezone.utc)
+            end_dt = datetime(d.year, d.month, d.day, h2, m2, tzinfo=timezone.utc)
+            if end_dt <= start_dt:
+                end_dt = end_dt + timedelta(days=1)
+            return QueryDSL(
+                aggregation=Aggregation.sum_delta,
+                metric=metric,
+                creator_id=creator_id,
+                day=d,
+                snapshot_from=start_dt,
+                snapshot_to=end_dt,
+            )
+
+        return QueryDSL(aggregation=Aggregation.sum_delta, metric=metric, creator_id=creator_id, day=d)
 
     if "сколько" in t and "разн" in t and "видео" in t and ("нов" in t or "получ" in t):
         metric = _detect_metric(text)
@@ -275,6 +307,8 @@ _SYSTEM = """Ты преобразуешь русскоязычный вопро
   "creator_id": string|null,
   "published_from": string|null,
   "published_to": string|null,
+  "snapshot_from": string|null,
+  "snapshot_to": string|null,
   "day": string|null,
   "threshold": {"metric": "views"|"likes"|"comments"|"reports", "op": "gt"|"gte"|"lt"|"lte", "value": number} | null
 }
@@ -283,6 +317,7 @@ _SYSTEM = """Ты преобразуешь русскоязычный вопро
 - Все даты в UTC.
 - published_from/published_to в ISO8601, published_to должно быть началом следующего дня для включительного диапазона.
 - day в формате YYYY-MM-DD.
+- snapshot_from/snapshot_to в ISO8601, используются для фильтрации по created_at в video_snapshots.
 - "за всё время" означает таблицу videos (final).
 - "выросли" и "прирост" означают сумму delta_* по таблице video_snapshots в пределах дня.
 - "замеры статистики", "снапшоты", "за час" и "delta" относятся к таблице video_snapshots.

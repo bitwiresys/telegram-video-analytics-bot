@@ -36,6 +36,9 @@ class QueryDSL(BaseModel):
     published_from: datetime | None = None
     published_to: datetime | None = None
 
+    snapshot_from: datetime | None = None
+    snapshot_to: datetime | None = None
+
     day: date | None = None
 
     threshold: Threshold | None = None

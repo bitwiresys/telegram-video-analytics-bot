@@ -46,6 +46,21 @@ async def test_parse_negative_delta_snapshots_views() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parse_sum_delta_creator_time_window() -> None:
+    q = (
+        "На сколько просмотров суммарно выросли все видео креатора с id cd87be38b50b4fdd8342bb3c383f3c7d "
+        "в промежутке с 10:00 до 15:00 28 ноября 2025 года?"
+    )
+    dsl = await parse_to_dsl(q)
+    assert dsl.aggregation == Aggregation.sum_delta
+    assert dsl.metric == Metric.views
+    assert dsl.creator_id == "cd87be38b50b4fdd8342bb3c383f3c7d"
+    assert dsl.day == date(2025, 11, 28)
+    assert dsl.snapshot_from == datetime(2025, 11, 28, 10, 0, tzinfo=timezone.utc)
+    assert dsl.snapshot_to == datetime(2025, 11, 28, 15, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
 async def test_parse_llm_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "x")
     monkeypatch.setenv("OPENROUTER_MODEL", "x")

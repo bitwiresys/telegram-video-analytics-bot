@@ -72,6 +72,31 @@ async def test_execute_sum_delta(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_sum_delta_creator_time_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
+        assert "JOIN videos" in stmt
+        assert "v.creator_id = :creator_id" in stmt
+        assert "s.created_at >= :start" in stmt
+        assert "s.created_at < :end" in stmt
+        assert params is not None
+        assert params["creator_id"] == "cd87be38b50b4fdd8342bb3c383f3c7d"
+        assert params["start"] == datetime(2025, 11, 28, 10, 0, tzinfo=timezone.utc)
+        assert params["end"] == datetime(2025, 11, 28, 15, 0, tzinfo=timezone.utc)
+        return 757
+
+    monkeypatch.setattr("app.queries.fetch_scalar", fake_fetch)
+    dsl = QueryDSL(
+        aggregation=Aggregation.sum_delta,
+        metric=Metric.views,
+        creator_id="cd87be38b50b4fdd8342bb3c383f3c7d",
+        snapshot_from=datetime(2025, 11, 28, 10, 0, tzinfo=timezone.utc),
+        snapshot_to=datetime(2025, 11, 28, 15, 0, tzinfo=timezone.utc),
+    )
+    res = await execute_dsl(dsl)
+    assert res == 757
+
+
+@pytest.mark.asyncio
 async def test_execute_distinct_delta(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
         assert "count(DISTINCT video_id)" in stmt
