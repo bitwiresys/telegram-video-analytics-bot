@@ -473,6 +473,7 @@ async def parse_to_dsl(text: str) -> QueryDSL:
     if heuristic_dsl is not None and heuristic_dsl.aggregation in {
         Aggregation.count_snapshots_with_delta_lt0,
         Aggregation.count_distinct_creators_with_final_gt,
+        Aggregation.count_distinct_publish_days,
     }:
         return heuristic_dsl
 

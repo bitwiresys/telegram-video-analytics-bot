@@ -86,6 +86,24 @@ async def test_parse_count_distinct_publish_days_month() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parse_count_distinct_publish_days_prefers_heuristic_over_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    monkeypatch.setenv("OPENROUTER_MODEL", "x")
+
+    async def fake_chat(system: str, user: str) -> str:
+        raise AssertionError("LLM should not be called for this heuristic")
+
+    monkeypatch.setattr("app.nlp.chat_completion", fake_chat)
+
+    q = (
+        "Для креатора с id aca1061a9d324ecf8c3fa2bb32d7be63 посчитай, "
+        "в скольких разных календарных днях ноября 2025 года он публиковал хотя бы одно видео"
+    )
+    dsl = await parse_to_dsl(q)
+    assert dsl.aggregation == Aggregation.count_distinct_publish_days
+
+
+@pytest.mark.asyncio
 async def test_parse_count_distinct_creators_with_final_gt() -> None:
     q = "Сколько разных креаторов имеют хотя бы одно видео, которое в итоге набрало больше 10 000 лайков?"
     dsl = await parse_to_dsl(q)
