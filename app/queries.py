@@ -65,6 +65,40 @@ async def execute_dsl(dsl: QueryDSL) -> int:
             logger.info("dsl_ok", extra={"aggregation": dsl.aggregation.value, "result": result})
             return result
 
+        if dsl.aggregation == Aggregation.count_distinct_creators_with_final_gt:
+            if dsl.threshold is None:
+                return 0
+            where_creators: list[str] = []
+            params_creators: dict[str, object] = {}
+
+            if dsl.creator_id:
+                where_creators.append("creator_id = :creator_id")
+                params_creators["creator_id"] = dsl.creator_id
+
+            if dsl.published_from:
+                where_creators.append("video_created_at >= :published_from")
+                params_creators["published_from"] = dsl.published_from
+
+            if dsl.published_to:
+                where_creators.append("video_created_at < :published_to")
+                params_creators["published_to"] = dsl.published_to
+
+            col = _metric_column(dsl.threshold.metric)
+            op = dsl.threshold.op
+            if op not in {"gt", "gte", "lt", "lte"}:
+                op = "gt"
+            sql_op = {"gt": ">", "gte": ">=", "lt": "<", "lte": "<="}[op]
+            where_creators.append(f"{col} {sql_op} :threshold_value")
+            params_creators["threshold_value"] = dsl.threshold.value
+
+            stmt = "SELECT count(DISTINCT creator_id) FROM videos"
+            if where_creators:
+                stmt += " WHERE " + " AND ".join(where_creators)
+
+            result = await fetch_scalar(stmt, params_creators if params_creators else None)
+            logger.info("dsl_ok", extra={"aggregation": dsl.aggregation.value, "result": result})
+            return result
+
         if dsl.aggregation == Aggregation.sum_final:
             metric = dsl.metric or Metric.views
             col = _metric_column(metric)

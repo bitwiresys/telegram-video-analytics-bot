@@ -35,6 +35,24 @@ async def test_execute_count_videos(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_count_distinct_creators_with_final_gt(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
+        assert "count(DISTINCT creator_id)" in stmt
+        assert "likes_count > :threshold_value" in stmt
+        assert params is not None
+        assert params["threshold_value"] == 10000
+        return 2
+
+    monkeypatch.setattr("app.queries.fetch_scalar", fake_fetch)
+    dsl = QueryDSL(
+        aggregation=Aggregation.count_distinct_creators_with_final_gt,
+        threshold=Threshold(metric=Metric.likes, op="gt", value=10000),
+    )
+    res = await execute_dsl(dsl)
+    assert res == 2
+
+
+@pytest.mark.asyncio
 async def test_execute_sum_final(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
         assert "sum(likes_count)" in stmt

@@ -235,7 +235,14 @@ def _heuristic_parse(text: str) -> QueryDSL | None:
         and ("просмотр" in t or "лайк" in t or "комментар" in t or "жалоб" in t)
     )
 
-    if "сколько" in t and "видео" in t and "вырос" not in t and "прирост" not in t and not new_views_intent:
+    if (
+        "сколько" in t
+        and "видео" in t
+        and "вырос" not in t
+        and "прирост" not in t
+        and not new_views_intent
+        and not ("разн" in t and "креатор" in t)
+    ):
         creator_id = _extract_creator_id(text)
         left, right = _extract_range(text)
         published_from = None
@@ -289,6 +296,27 @@ def _heuristic_parse(text: str) -> QueryDSL | None:
             return None
         return QueryDSL(aggregation=Aggregation.count_distinct_videos_with_delta_gt0, metric=metric, day=d)
 
+    if "сколько" in t and "разн" in t and "креатор" in t and "видео" in t:
+        threshold = _extract_threshold(text)
+        if threshold is None:
+            return None
+        creator_id = _extract_creator_id(text)
+        left, right = _extract_range(text)
+        published_from = None
+        published_to = None
+        if left and right:
+            start, _ = _day_bounds_utc(left)
+            _, end = _day_bounds_utc(right)
+            published_from = start
+            published_to = end
+        return QueryDSL(
+            aggregation=Aggregation.count_distinct_creators_with_final_gt,
+            creator_id=creator_id,
+            published_from=published_from,
+            published_to=published_to,
+            threshold=threshold,
+        )
+
     if "сколько" in t and ("просмотр" in t or "лайк" in t or "комментар" in t or "жалоб" in t) and "вс" in t:
         metric = _detect_metric(text)
         if metric is None:
@@ -302,7 +330,7 @@ _SYSTEM = """Ты преобразуешь русскоязычный вопро
 
 Схема QueryDSL:
 {
-  "aggregation": "count_videos" | "sum_final" | "sum_delta" | "count_distinct_videos_with_delta_gt0" | "count_snapshots_with_delta_lt0",
+  "aggregation": "count_videos" | "sum_final" | "sum_delta" | "count_distinct_videos_with_delta_gt0" | "count_snapshots_with_delta_lt0" | "count_distinct_creators_with_final_gt",
   "metric": "views" | "likes" | "comments" | "reports" | null,
   "creator_id": string|null,
   "published_from": string|null,
@@ -331,7 +359,10 @@ async def parse_to_dsl(text: str) -> QueryDSL:
     settings = get_settings()
 
     heuristic_dsl = _heuristic_parse(text)
-    if heuristic_dsl is not None and heuristic_dsl.aggregation == Aggregation.count_snapshots_with_delta_lt0:
+    if heuristic_dsl is not None and heuristic_dsl.aggregation in {
+        Aggregation.count_snapshots_with_delta_lt0,
+        Aggregation.count_distinct_creators_with_final_gt,
+    }:
         return heuristic_dsl
 
     if settings.openrouter_api_key and settings.openrouter_model:

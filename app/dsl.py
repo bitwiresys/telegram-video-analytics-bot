@@ -19,6 +19,7 @@ class Aggregation(str, Enum):
     sum_delta = "sum_delta"
     count_distinct_videos_with_delta_gt0 = "count_distinct_videos_with_delta_gt0"
     count_snapshots_with_delta_lt0 = "count_snapshots_with_delta_lt0"
+    count_distinct_creators_with_final_gt = "count_distinct_creators_with_final_gt"
 
 
 class Threshold(BaseModel):

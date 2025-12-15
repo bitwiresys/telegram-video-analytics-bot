@@ -61,6 +61,17 @@ async def test_parse_sum_delta_creator_time_window() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parse_count_distinct_creators_with_final_gt() -> None:
+    q = "Сколько разных креаторов имеют хотя бы одно видео, которое в итоге набрало больше 10 000 лайков?"
+    dsl = await parse_to_dsl(q)
+    assert dsl.aggregation == Aggregation.count_distinct_creators_with_final_gt
+    assert dsl.threshold is not None
+    assert dsl.threshold.metric == Metric.likes
+    assert dsl.threshold.op == "gt"
+    assert dsl.threshold.value == 10000
+
+
+@pytest.mark.asyncio
 async def test_parse_llm_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "x")
     monkeypatch.setenv("OPENROUTER_MODEL", "x")
