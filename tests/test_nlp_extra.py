@@ -73,6 +73,19 @@ async def test_parse_sum_delta_creator_time_window() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parse_count_distinct_publish_days_month() -> None:
+    q = (
+        "Для креатора с id aca1061a9d324ecf8c3fa2bb32d7be63 посчитай, "
+        "в скольких разных календарных днях ноября 2025 года он публиковал хотя бы одно видео"
+    )
+    dsl = await parse_to_dsl(q)
+    assert dsl.aggregation == Aggregation.count_distinct_publish_days
+    assert dsl.creator_id == "aca1061a9d324ecf8c3fa2bb32d7be63"
+    assert dsl.published_from == datetime(2025, 11, 1, tzinfo=timezone.utc)
+    assert dsl.published_to == datetime(2025, 12, 1, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
 async def test_parse_count_distinct_creators_with_final_gt() -> None:
     q = "Сколько разных креаторов имеют хотя бы одно видео, которое в итоге набрало больше 10 000 лайков?"
     dsl = await parse_to_dsl(q)

@@ -75,6 +75,28 @@ async def test_execute_sum_final(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_count_distinct_publish_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
+        assert "count(DISTINCT video_created_at::date)" in stmt
+        assert "creator_id = :creator_id" in stmt
+        assert "video_created_at >= :published_from" in stmt
+        assert "video_created_at < :published_to" in stmt
+        assert params is not None
+        assert params["creator_id"] == "aca"
+        return 10
+
+    monkeypatch.setattr("app.queries.fetch_scalar", fake_fetch)
+    dsl = QueryDSL(
+        aggregation=Aggregation.count_distinct_publish_days,
+        creator_id="aca",
+        published_from=datetime(2025, 11, 1, tzinfo=timezone.utc),
+        published_to=datetime(2025, 12, 1, tzinfo=timezone.utc),
+    )
+    res = await execute_dsl(dsl)
+    assert res == 10
+
+
+@pytest.mark.asyncio
 async def test_execute_sum_delta(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_fetch(stmt: str, params: dict[str, object] | None = None) -> int:
         assert "sum(delta_views_count)" in stmt

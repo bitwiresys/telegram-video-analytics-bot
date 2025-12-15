@@ -82,6 +82,22 @@ def _day_bounds_utc(d: date) -> tuple[datetime, datetime]:
     return start, end
 
 
+def _extract_month_range_anywhere(text: str) -> tuple[datetime | None, datetime | None]:
+    """Принимает текст; возвращает (published_from,published_to) для месяца, найденного в любом месте текста."""
+    for m in re.finditer(r"([а-яА-Я]+)\s+(\d{4})(?:\s+года)?", text):
+        month = _month_num(m.group(1))
+        if month is None:
+            continue
+        year = int(m.group(2))
+        start = datetime(year, month, 1, tzinfo=timezone.utc)
+        if month == 12:
+            end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+        return start, end
+    return None, None
+
+
 def _parse_date(s: str) -> date | None:
     """Принимает строку даты; возвращает date или None при невозможности разбора."""
     s_norm = s.strip().lower()
@@ -254,6 +270,31 @@ def _heuristic_parse(text: str) -> QueryDSL | None:
     """Принимает текст; возвращает QueryDSL из эвристик или None если не распознано."""
     t = text.lower()
 
+    if (
+        ("скольк" in t or "в скольк" in t)
+        and ("разн" in t or "различ" in t)
+        and ("календар" in t or "дн" in t)
+        and ("публик" in t or "опублик" in t or "выш" in t)
+        and "видео" in t
+    ):
+        creator_id = _extract_creator_id(text)
+        left, right = _extract_range(text)
+        published_from = None
+        published_to = None
+        if left and right:
+            start, _ = _day_bounds_utc(left)
+            _, end = _day_bounds_utc(right)
+            published_from = start
+            published_to = end
+        else:
+            published_from, published_to = _extract_month_range_anywhere(text)
+        return QueryDSL(
+            aggregation=Aggregation.count_distinct_publish_days,
+            creator_id=creator_id,
+            published_from=published_from,
+            published_to=published_to,
+        )
+
     if "замер" in t or "снапш" in t or "за час" in t:
         metric = _detect_metric(text)
         if metric is not None and ("отриц" in t or "стало меньше" in t or "уменьш" in t):
@@ -400,7 +441,7 @@ _SYSTEM = """Ты преобразуешь русскоязычный вопро
 
 Схема QueryDSL:
 {
-  "aggregation": "count_videos" | "sum_final" | "sum_delta" | "count_distinct_videos_with_delta_gt0" | "count_snapshots_with_delta_lt0" | "count_distinct_creators_with_final_gt",
+  "aggregation": "count_videos" | "sum_final" | "sum_delta" | "count_distinct_videos_with_delta_gt0" | "count_snapshots_with_delta_lt0" | "count_distinct_creators_with_final_gt" | "count_distinct_publish_days",
   "metric": "views" | "likes" | "comments" | "reports" | null,
   "creator_id": string|null,
   "published_from": string|null,

@@ -65,6 +65,30 @@ async def execute_dsl(dsl: QueryDSL) -> int:
             logger.info("dsl_ok", extra={"aggregation": dsl.aggregation.value, "result": result})
             return result
 
+        if dsl.aggregation == Aggregation.count_distinct_publish_days:
+            where_days: list[str] = []
+            params_days: dict[str, object] = {}
+
+            if dsl.creator_id:
+                where_days.append("creator_id = :creator_id")
+                params_days["creator_id"] = dsl.creator_id
+
+            if dsl.published_from:
+                where_days.append("video_created_at >= :published_from")
+                params_days["published_from"] = dsl.published_from
+
+            if dsl.published_to:
+                where_days.append("video_created_at < :published_to")
+                params_days["published_to"] = dsl.published_to
+
+            stmt = "SELECT count(DISTINCT video_created_at::date) FROM videos"
+            if where_days:
+                stmt += " WHERE " + " AND ".join(where_days)
+
+            result = await fetch_scalar(stmt, params_days if params_days else None)
+            logger.info("dsl_ok", extra={"aggregation": dsl.aggregation.value, "result": result})
+            return result
+
         if dsl.aggregation == Aggregation.count_distinct_creators_with_final_gt:
             if dsl.threshold is None:
                 return 0
