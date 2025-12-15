@@ -294,6 +294,11 @@ _SYSTEM = """Ты преобразуешь русскоязычный вопро
 async def parse_to_dsl(text: str) -> QueryDSL:
     """Принимает текст запроса; возвращает QueryDSL (LLM при наличии ключей, иначе эвристики)."""
     settings = get_settings()
+
+    heuristic_dsl = _heuristic_parse(text)
+    if heuristic_dsl is not None and heuristic_dsl.aggregation == Aggregation.count_snapshots_with_delta_lt0:
+        return heuristic_dsl
+
     if settings.openrouter_api_key and settings.openrouter_model:
         try:
             raw = await chat_completion(_SYSTEM, text)
